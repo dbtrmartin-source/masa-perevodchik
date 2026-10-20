@@ -70,6 +70,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "join") return join(p, msg);
     if (msg.type === "leave") return leave(p);
     if (msg.type === "mic") { p.mic = !!msg.on; broadcastRoster(p.room); }
+    if (msg.type === "far") { p.far = !!msg.on; stopTranslator(p); } // пересоздастся с новыми фильтрами
     if (msg.type === "ping") json(ws, { type: "pong" });
   });
   ws.on("close", () => leave(p));
@@ -86,6 +87,7 @@ function join(p, msg) {
   p.name = name;
   p.lang = lang;
   p.mic = true;
+  p.far = !!msg.far;
   if (!rooms.has(room)) rooms.set(room, new Map());
   rooms.get(room).set(p.id, p);
   json(p.ws, { type: "joined", id: p.id, room });
@@ -127,6 +129,7 @@ function startTranslator(p) {
   const opts = {
     label: `${p.room}/${p.name}`,
     voiceIndex: p.voice,
+    far: p.far,
     onAudio: (pcm) => relayAudio(p, pcm),
     onCaption: (kind, text, final, full) => relayCaption(p, kind, text, final, full),
     onStatus: (state, message) => { if (state === "error") json(p.ws, { type: "warn", message }); },

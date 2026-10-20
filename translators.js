@@ -70,7 +70,7 @@ export function createTurkishToRussian(opts) {
             audio: {
               input: {
                 transcription: { model: "gpt-realtime-whisper" },
-                noise_reduction: { type: "near_field" },
+                noise_reduction: { type: opts.far ? "far_field" : "near_field" },
               },
               output: { language: "ru" },
             },
@@ -165,11 +165,11 @@ export function createRussianToTurkish(opts) {
       audio: {
         input: {
           format: { type: "audio/pcm", rate: 24000 },
-          noise_reduction: { type: "near_field" },
+          noise_reduction: { type: opts.far ? "far_field" : "near_field" },
           transcription: { model: TRANSCRIBE_MODEL, language: "ru" },
           turn_detection: {
             type: "server_vad",
-            threshold: 0.5,
+            threshold: opts.far ? 0.3 : 0.5,
             prefix_padding_ms: 300,
             silence_duration_ms: Number(process.env.VAD_SILENCE_MS || 450),
             create_response: true,
