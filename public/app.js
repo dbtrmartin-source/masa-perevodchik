@@ -20,6 +20,9 @@
       hidden: "Страница была свёрнута — звук мог прерваться. Держите экран включённым.",
       micDenied: "Нет доступа к микрофону. Разрешите его в настройках браузера.",
       said: "сказал(а)",
+      noCredits: "Перевод остановлен: на счёте OpenAI закончились деньги. Пополните баланс на platform.openai.com → Billing.",
+      badKey: "Перевод не работает: неверный ключ OpenAI (проверьте OPENAI_API_KEY в Render).",
+      netErr: "Нет связи с OpenAI, пробую снова…",
     },
     tr: {
       table: "Masa", invite: "Davet et", copy: "Kopyala", copied: "Kopyalandı",
@@ -33,6 +36,9 @@
       hidden: "Sayfa arka plana alındı — ses kesilmiş olabilir. Ekranı açık tutun.",
       micDenied: "Mikrofona erişim yok. Tarayıcı ayarlarından izin verin.",
       said: "dedi",
+      noCredits: "Çeviri durdu: OpenAI hesabında bakiye bitti. platform.openai.com → Billing üzerinden yükleyin.",
+      badKey: "Çeviri çalışmıyor: OpenAI anahtarı geçersiz.",
+      netErr: "OpenAI bağlantısı yok, yeniden deneniyor…",
     },
   };
 
@@ -251,7 +257,10 @@
         state.people = msg.people;
         renderPeople();
       } else if (msg.type === "caption") onCaption(msg);
-      else if (msg.type === "warn") showWarn("OpenAI: " + msg.message, 8000);
+      else if (msg.type === "warn") {
+        const known = { no_credits: "noCredits", bad_key: "badKey", network: "netErr" }[msg.code];
+        showWarn(known ? t(known) : "OpenAI: " + msg.message, 12000);
+      }
       else if (msg.type === "error") showWarn(msg.message, 5000);
     };
     ws.onclose = () => {
