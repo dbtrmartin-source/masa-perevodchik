@@ -11,6 +11,49 @@ export const TRANSLATE_MODEL = process.env.OPENAI_TRANSLATE_MODEL || "gpt-realti
 export const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-1.5";
 const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe";
 
+// Реестр ВСЕХ соединений с OpenAI: сторож закрывает всё лишнее, ведётся учёт минут.
+export const sockets = new Set(); // { ws, s, label, openedAt }
+const DAY_LIMIT_MIN = Number(process.env.DAILY_LIMIT_MIN || 120);
+let usedMs = 0;
+let usedDay = new Date().toDateString();
+export function usage() {
+  const today = new Date().toDateString();
+  if (today !== usedDay) { usedDay = today; usedMs = 0; }
+  let live = 0;
+  for (const x of sockets) live += Date.now() - x.openedAt;
+  return { usedMin: (usedMs + live) / 60000, limitMin: DAY_LIMIT_MIN, open: sockets.size };
+}
+export function overLimit() { return usage().usedMin >= DAY_LIMIT_MIN; }
+function track(s, ws) {
+  const x = { ws, s, label: s.label, openedAt: Date.now() };
+  sockets.add(x);
+  console.log(`[openai] OPEN  ${s.label} (всего открыто: ${sockets.size})`);
+  ws.once("close", () => {
+    if (!sockets.delete(x)) return;
+    const ms = Date.now() - x.openedAt;
+    usedMs += ms;
+    console.log(`[openai] CLOSE ${s.label} через ${Math.round(ms / 1000)} с (всего открыто: ${sockets.size}, за день ${usage().usedMin.toFixed(1)} мин)`);
+  });
+}
+// Сторож: каждые 5 с жёстко рвёт соединения, у которых закрыт владелец, нет звука > 60 с или возраст > 15 мин.
+setInterval(() => {
+  const now = Date.now();
+  for (const x of sockets) {
+    const idle = now - (x.s.lastIn || x.openedAt);
+    let why = "";
+    if (x.s.closed) why = "владелец закрыт";
+    else if (idle > 60000) why = "нет звука 60 с";
+    else if (now - x.openedAt > 15 * 60000) why = "сессия > 15 мин";
+    if (why) {
+      console.log(`[openai] KILL  ${x.label}: ${why}`);
+      x.s.closed = x.s.closed || why !== "сессия > 15 мин";
+      try { x.ws.terminate(); } catch {}
+      sockets.delete(x);
+      usedMs += now - x.openedAt;
+    }
+  }
+}, 5000);
+
 const VOICES = ["marin", "cedar", "coral", "ash", "sage", "verse", "shimmer", "ballad"];
 
 const INTERPRETER_PROMPT = `# Role
@@ -45,6 +88,7 @@ function base({ label, onAudio, onCaption, onStatus, log = console }) {
 
 // Ошибка от OpenAI: пауза перед повтором (нет денег на счёте — 30 с, прочее — нарастающая 2..30 с)
 function fail(s, code, message) {
+  if (code === "daily_limit") { s.retryAt = Date.now() + 60000; s.pending.length = 0; return s.onStatus("error", message, "daily_limit"); }
   const quota = /quota|credit|billing/i.test(String(code) + " " + String(message));
   s.backoff = quota ? 30000 : Math.min(30000, s.backoff ? s.backoff * 2 : 2000);
   s.retryAt = Date.now() + s.backoff;
@@ -71,8 +115,10 @@ export function createTurkishToRussian(opts) {
     s.connecting = true;
     s.ready = false;
     const url = `${WS_BASE()}/v1/realtime/translations?model=${encodeURIComponent(TRANSLATE_MODEL)}`;
+    if (overLimit()) { fail(s, "daily_limit", "daily limit"); s.connecting = false; return; }
     const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${API_KEY()}` } });
     s.ws = ws;
+    track(s, ws);
     ws.on("open", () => {
       ws.send(
         JSON.stringify({
@@ -146,6 +192,7 @@ export function createTurkishToRussian(opts) {
   return {
     kind: "translate",
     append(pcm) {
+      s.lastIn = Date.now();
       chunk.push(pcm);
       chunkBytes += pcm.length;
       if (chunkBytes >= CHUNK) {
@@ -157,7 +204,7 @@ export function createTurkishToRussian(opts) {
     },
     close() {
       s.closed = true;
-      try { s.ws?.close(); } catch {}
+      try { s.ws?.terminate(); } catch {}
     },
   };
 }
@@ -200,8 +247,10 @@ export function createRussianToTurkish(opts) {
     s.connecting = true;
     s.ready = false;
     const url = `${WS_BASE()}/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
+    if (overLimit()) { fail(s, "daily_limit", "daily limit"); s.connecting = false; return; }
     const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${API_KEY()}` } });
     s.ws = ws;
+    track(s, ws);
     ws.on("open", () => {
       ws.send(JSON.stringify(sessionUpdate()));
       s.ready = true;
@@ -247,7 +296,7 @@ export function createRussianToTurkish(opts) {
         }
         case "error":
           // удаление уже удалённого элемента — не страшно
-          if (ev.error?.code === "item_delete_invalid_item_id") break;
+          if (ev.error?.code === "item_delete_invalid_item_id" || ev.error?.code === "conversation_already_has_active_response") break;
           s.log.error(`[${s.label}] OpenAI error`, ev.error?.code, ev.error?.message);
           fail(s, ev.error?.code || ev.error?.type, ev.error?.message || "OpenAI error");
           break;
@@ -269,6 +318,7 @@ export function createRussianToTurkish(opts) {
   return {
     kind: "realtime",
     append(pcm) {
+      s.lastIn = Date.now();
       const payload = JSON.stringify({ type: "input_audio_buffer.append", audio: pcm.toString("base64") });
       if (s.ready && s.ws?.readyState === WebSocket.OPEN) s.ws.send(payload);
       else {
@@ -279,7 +329,7 @@ export function createRussianToTurkish(opts) {
     },
     close() {
       s.closed = true;
-      try { s.ws?.close(); } catch {}
+      try { s.ws?.terminate(); } catch {}
     },
   };
 }

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer } from "ws";
 import QRCode from "qrcode";
-import { createTurkishToRussian, createRussianToTurkish } from "./translators.js";
+import { createTurkishToRussian, createRussianToTurkish, usage } from "./translators.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, "public");
@@ -62,6 +62,7 @@ const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 1 << 20 });
 wss.on("connection", (ws) => {
   const p = { id: randomBytes(4).toString("hex"), ws, room: null, name: "", lang: "", mic: true, translator: null, voice: voiceCounter++ };
   p.idBuf = Buffer.from(p.id);
+  ws.on("pong", () => (ws.missed = 0));
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) return onAudio(p, data);
@@ -71,7 +72,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "leave") return leave(p);
     if (msg.type === "mic") { p.mic = !!msg.on; if (!p.mic) stopTranslator(p); broadcastRoster(p.room); }
     if (msg.type === "far") { p.far = !!msg.on; stopTranslator(p); } // пересоздастся с новыми фильтрами
-    if (msg.type === "ping") json(ws, { type: "pong" });
+    if (msg.type === "ping") { ws.missed = 0; json(ws, { type: "pong" }); }
   });
   ws.on("close", () => leave(p));
   ws.on("error", () => {});
@@ -147,7 +148,7 @@ function startTranslator(p) {
       const now = Date.now();
       if (now - (p.warnedAt || 0) < 10000) return;
       p.warnedAt = now;
-      const members = code === "no_credits" ? [...(rooms.get(p.room)?.values() || [])] : [p];
+      const members = code === "no_credits" || code === "daily_limit" ? [...(rooms.get(p.room)?.values() || [])] : [p];
       for (const q of members) json(q.ws, { type: "warn", code, message });
     },
     log: console,
@@ -197,10 +198,22 @@ function log(...a) {
   console.log(new Date().toISOString().slice(11, 19), ...a);
 }
 
-// heartbeat, чтобы прокси (Render и пр.) не рвали неактивные сокеты
+// heartbeat: пингуем телефоны; кто не ответил за 2 пинга (уснул/пропала сеть) — отключаем и закрываем его сессии
 setInterval(() => {
-  for (const ws of wss.clients) if (ws.readyState === 1) ws.ping();
-}, 25000);
+  for (const ws of wss.clients) {
+    if (ws.missed >= 2) { ws.terminate(); continue; }
+    ws.missed = (ws.missed || 0) + 1;
+    if (ws.readyState === 1) ws.ping();
+  }
+}, 20000);
+
+// раз в минуту — сводка в лог, чтобы всегда было видно, тратится ли что-то
+setInterval(() => {
+  const u = usage();
+  let people = 0;
+  for (const m of rooms.values()) people += m.size;
+  if (u.open || people) console.log(`[status] людей: ${people}, соединений с OpenAI: ${u.open}, за день: ${u.usedMin.toFixed(1)} из ${u.limitMin} мин`);
+}, 60000);
 
 server.listen(PORT, () => log(`Стол-переводчик: http://localhost:${PORT}`));
 
