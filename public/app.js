@@ -20,6 +20,7 @@
       hidden: "Страница была свёрнута — звук мог прерваться. Держите экран включённым.",
       micDenied: "Нет доступа к микрофону. Разрешите его в настройках браузера.",
       said: "сказал(а)",
+      wait: "Подождите — сейчас говорит ",
       noCredits: "Перевод остановлен: на счёте OpenAI закончились деньги. Пополните баланс на platform.openai.com → Billing.",
       badKey: "Перевод не работает: неверный ключ OpenAI (проверьте OPENAI_API_KEY в Render).",
       netErr: "Нет связи с OpenAI, пробую снова…",
@@ -37,6 +38,7 @@
       hidden: "Sayfa arka plana alındı — ses kesilmiş olabilir. Ekranı açık tutun.",
       micDenied: "Mikrofona erişim yok. Tarayıcı ayarlarından izin verin.",
       said: "dedi",
+      wait: "Lütfen bekleyin — şu anda konuşuyor: ",
       noCredits: "Çeviri durdu: OpenAI hesabında bakiye bitti. platform.openai.com → Billing üzerinden yükleyin.",
       badKey: "Çeviri çalışmıyor: OpenAI anahtarı geçersiz.",
       netErr: "OpenAI bağlantısı yok, yeniden deneniyor…",
@@ -259,6 +261,8 @@
         state.people = msg.people;
         renderPeople();
       } else if (msg.type === "caption") onCaption(msg);
+      else if (msg.type === "floor") { state.floor = msg.id; renderTalking(); }
+      else if (msg.type === "busy") showWarn(t("wait") + msg.name, 2500);
       else if (msg.type === "warn") {
         const known = { no_credits: "noCredits", bad_key: "badKey", network: "netErr", daily_limit: "dayLimit" }[msg.code];
         showWarn(known ? t(known) : "OpenAI: " + msg.message, 12000);
@@ -311,7 +315,7 @@
   function renderTalking() {
     const now = performance.now();
     for (const el of document.querySelectorAll(".person")) {
-      el.classList.toggle("talking", (state.talkingUntil.get(el.dataset.id) || 0) > now);
+      el.classList.toggle("talking", el.dataset.id === state.floor || (state.talkingUntil.get(el.dataset.id) || 0) > now);
     }
   }
   setInterval(renderTalking, 300);
