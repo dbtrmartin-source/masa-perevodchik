@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { WebSocketServer } from "ws";
 import QRCode from "qrcode";
-import { createTurkishToRussian, createRussianToTurkish, usage } from "./translators.js";
+import { createTurkishToRussian, createTurkishToRussianInterpreter, createRussianToTurkish, usage } from "./translators.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, "public");
@@ -182,7 +182,8 @@ function startTranslator(p) {
     },
     log: console,
   };
-  p.translator = p.lang === "tr" ? createTurkishToRussian(opts) : createRussianToTurkish(opts);
+  const trEngine = process.env.TR_ENGINE === "translate" ? createTurkishToRussian : createTurkishToRussianInterpreter;
+  p.translator = p.lang === "tr" ? trEngine(opts) : createRussianToTurkish(opts);
 }
 
 function stopTranslator(p) {

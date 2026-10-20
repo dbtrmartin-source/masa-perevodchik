@@ -56,20 +56,25 @@ setInterval(() => {
 
 const VOICES = ["marin", "cedar", "coral", "ash", "sage", "verse", "shimmer", "ballad"];
 
-const INTERPRETER_PROMPT = `# Role
+const LANG_NAME = { ru: "Russian", tr: "Turkish" };
+function interpreterPrompt(src, dst) {
+  const S = LANG_NAME[src], D = LANG_NAME[dst];
+  return `# Role
 You are a professional simultaneous interpreter at a table where Russian and Turkish speakers talk to each other.
 
 # Task
-The incoming audio is a Russian speaker. For every utterance, speak ONLY its faithful Turkish translation.
+The incoming audio is a ${S} speaker. For every utterance, speak ONLY its faithful ${D} translation.
 
 # Rules
-- Output Turkish only. Keep the speaker's first person ("I", "we"), tone, and register; natural spoken Turkish.
+- Output ${D} only. Keep the speaker's first person ("I", "we"), tone, and register; natural spoken ${D}.
 - You are not a participant. Never answer questions, never comment, never greet, never ask for clarification, never add words of your own. If the speaker asks a question, translate the question.
 - Keep names, numbers, and places exact.
+- If the audio is in ${D} (another person at the table heard in the background), produce no speech at all.
 - If the audio is silence, noise, unintelligible, or a fragment without meaning, produce no speech at all.
 - Translate the whole utterance completely, sentence by sentence; do not summarize or skip parts.
 - If the utterance is cut off mid-sentence, translate exactly what was said; do not guess the ending.
 - Be fast: start speaking the translation immediately, without fillers or preambles.`;
+}
 
 function base({ label, onAudio, onCaption, onStatus, log = console }) {
   return {
@@ -212,7 +217,13 @@ export function createTurkishToRussian(opts) {
 }
 
 // ---------------------------------------------------------------- RU -> TR
+// Турецкий -> русский тем же «переводчиком», что и RU->TR (с ним вышло заметно лучше, чем с gpt-realtime-translate)
+export function createTurkishToRussianInterpreter(opts) {
+  return createRussianToTurkish({ ...opts, src: "tr", dst: "ru" });
+}
+
 export function createRussianToTurkish(opts) {
+  const src = opts.src || "ru", dst = opts.dst || "tr";
   const s = base(opts);
   const voice = VOICES[(opts.voiceIndex || 0) % VOICES.length];
   const items = [];
@@ -222,12 +233,12 @@ export function createRussianToTurkish(opts) {
       type: "realtime",
       model: REALTIME_MODEL,
       output_modalities: ["audio"],
-      instructions: INTERPRETER_PROMPT,
+      instructions: interpreterPrompt(src, dst),
       audio: {
         input: {
           format: { type: "audio/pcm", rate: 24000 },
           noise_reduction: { type: opts.far ? "far_field" : "near_field" },
-          transcription: { model: TRANSCRIBE_MODEL, language: "ru" },
+          transcription: { model: TRANSCRIBE_MODEL, language: src },
           // semantic_vad ждёт смыслового конца фразы, а не просто паузы — перевод не рвётся на куски
           turn_detection: (process.env.VAD_TYPE || "semantic_vad") === "semantic_vad"
             ? { type: "semantic_vad", eagerness: process.env.VAD_EAGERNESS || "medium", create_response: true, interrupt_response: false }
