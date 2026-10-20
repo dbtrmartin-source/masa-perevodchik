@@ -12,7 +12,8 @@
       table: "Стол", invite: "Пригласить", copy: "Копировать", copied: "Скопировано",
       sens: "Чувствительность микрофона", sensHint: "Меньше — не ловит соседей. Больше — ловит тихую речь.",
       vol: "Громкость перевода", nohp: "Я без наушников (микрофон выключается, пока звучит перевод)",
-      test: "Проверить звук", empty: "Говорите — перевод появится здесь и в наушниках.",
+      test: "Проверить звук", far: "Режим теста: ловить звук с колонки / ноутбука рядом (выключает фильтры шума)",
+      farOn: "Режим теста включён: микрофон ловит всё вокруг, включая соседей.", empty: "Говорите — перевод появится здесь и в наушниках.",
       leave: "Выйти", micOn: "Микрофон вкл.", micOff: "Микрофон выкл.",
       you: "вы", online: "на связи", reconnecting: "переподключение…",
       alone: "Пока за столом нет собеседников на турецком. Отправьте им ссылку.",
@@ -24,7 +25,8 @@
       table: "Masa", invite: "Davet et", copy: "Kopyala", copied: "Kopyalandı",
       sens: "Mikrofon hassasiyeti", sensHint: "Düşük — yan masadakileri almaz. Yüksek — kısık sesi de alır.",
       vol: "Çeviri ses seviyesi", nohp: "Kulaklığım yok (çeviri çalarken mikrofon kapanır)",
-      test: "Sesi test et", empty: "Konuşun — çeviri burada ve kulaklıkta görünecek.",
+      test: "Sesi test et", far: "Test modu: yakındaki hoparlör / dizüstü bilgisayar sesini al (gürültü filtrelerini kapatır)",
+      farOn: "Test modu açık: mikrofon etraftaki her sesi alır.", empty: "Konuşun — çeviri burada ve kulaklıkta görünecek.",
       leave: "Çık", micOn: "Mikrofon açık", micOff: "Mikrofon kapalı",
       you: "siz", online: "bağlı", reconnecting: "yeniden bağlanıyor…",
       alone: "Masada henüz Rusça konuşan yok. Onlara bağlantıyı gönderin.",
@@ -38,7 +40,7 @@
     room: null, name: store.get("name") || "", lang: store.get("lang") || "",
     me: null, people: [], ws: null, wantOnline: false, micOn: true,
     ctx: null, capture: null, playback: null, stream: null, wakeLock: null,
-    playing: false, noHeadphones: store.get("nohp") === "1",
+    playing: false, noHeadphones: store.get("nohp") === "1", far: false,
     talkingUntil: new Map(), bubbles: new Map(), retry: 0,
   };
   const t = (k) => (T[state.lang] || T.ru)[k] || k;
@@ -116,9 +118,12 @@
     }
     if (!state.stream) {
       state.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        audio: state.far
+          ? { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 }
+          : { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
       const src = ctx.createMediaStreamSource(state.stream);
+      state.source = src;
       state.capture = new AudioWorkletNode(ctx, "capture", { numberOfOutputs: 1, outputChannelCount: [1] });
       src.connect(state.capture);
       // Safari обрабатывает узел, только если он подключён к выходу — подключаем через «немой» gain
@@ -139,7 +144,8 @@
   function applySettings() {
     const sens = Number($("in-sens").value); // 1..100
     // 100 -> порог 0.003 (очень чувствительно), 1 -> 0.12
-    const threshold = 0.12 * Math.pow(0.003 / 0.12, (sens - 1) / 99);
+    let threshold = 0.12 * Math.pow(0.003 / 0.12, (sens - 1) / 99);
+    if (state.far) threshold = Math.min(threshold, 0.004);
     state.capture && state.capture.port.postMessage({ threshold });
     state.playback && state.playback.port.postMessage({ gain: Number($("in-vol").value) / 100 });
     store.set("sens", $("in-sens").value);
@@ -148,6 +154,19 @@
   $("in-sens").value = store.get("sens") || 60;
   $("in-vol").value = store.get("vol") || 100;
   $("in-nohp").checked = state.noHeadphones;
+  $("in-far").onchange = async () => {
+    state.far = $("in-far").checked;
+    // перезапускаем микрофон с другими фильтрами браузера
+    if (state.stream) {
+      state.stream.getTracks().forEach((tr) => tr.stop());
+      try { state.source.disconnect(); state.capture.disconnect(); } catch {}
+      state.stream = null;
+      state.capture = null;
+      try { await startAudio(); applyMute(); } catch { showWarn(t("micDenied")); }
+    }
+    if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify({ type: "far", on: state.far }));
+    if (state.far) showWarn(t("farOn"), 6000);
+  };
   $("in-sens").oninput = applySettings;
   $("in-vol").oninput = applySettings;
   $("in-nohp").onchange = () => {
@@ -219,7 +238,7 @@
     setStatus(t("reconnecting"));
     ws.onopen = () => {
       state.retry = 0;
-      ws.send(JSON.stringify({ type: "join", room: state.room, name: state.name, lang: state.lang }));
+      ws.send(JSON.stringify({ type: "join", room: state.room, name: state.name, lang: state.lang, far: state.far }));
     };
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") return onAudioFrame(e.data);
