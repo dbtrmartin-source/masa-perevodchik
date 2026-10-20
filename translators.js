@@ -13,7 +13,7 @@ const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-tra
 
 // Реестр ВСЕХ соединений с OpenAI: сторож закрывает всё лишнее, ведётся учёт минут.
 export const sockets = new Set(); // { ws, s, label, openedAt }
-const DAY_LIMIT_MIN = Number(process.env.DAILY_LIMIT_MIN || 120);
+const DAY_LIMIT_MIN = Number(process.env.DAILY_LIMIT_MIN || 480);
 let usedMs = 0;
 let usedDay = new Date().toDateString();
 export function usage() {
