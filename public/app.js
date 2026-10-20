@@ -23,6 +23,7 @@
       noCredits: "Перевод остановлен: на счёте OpenAI закончились деньги. Пополните баланс на platform.openai.com → Billing.",
       badKey: "Перевод не работает: неверный ключ OpenAI (проверьте OPENAI_API_KEY в Render).",
       netErr: "Нет связи с OpenAI, пробую снова…",
+      dayLimit: "Достигнут дневной лимит минут перевода. Его можно увеличить в настройках сервера (DAILY_LIMIT_MIN).",
     },
     tr: {
       table: "Masa", invite: "Davet et", copy: "Kopyala", copied: "Kopyalandı",
@@ -39,6 +40,7 @@
       noCredits: "Çeviri durdu: OpenAI hesabında bakiye bitti. platform.openai.com → Billing üzerinden yükleyin.",
       badKey: "Çeviri çalışmıyor: OpenAI anahtarı geçersiz.",
       netErr: "OpenAI bağlantısı yok, yeniden deneniyor…",
+      dayLimit: "Günlük çeviri dakika limiti doldu.",
     },
   };
 
@@ -258,7 +260,7 @@
         renderPeople();
       } else if (msg.type === "caption") onCaption(msg);
       else if (msg.type === "warn") {
-        const known = { no_credits: "noCredits", bad_key: "badKey", network: "netErr" }[msg.code];
+        const known = { no_credits: "noCredits", bad_key: "badKey", network: "netErr", daily_limit: "dayLimit" }[msg.code];
         showWarn(known ? t(known) : "OpenAI: " + msg.message, 12000);
       }
       else if (msg.type === "error") showWarn(msg.message, 5000);
