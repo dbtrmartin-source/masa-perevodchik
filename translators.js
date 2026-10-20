@@ -38,7 +38,18 @@ function base({ label, onAudio, onCaption, onStatus, log = console }) {
     onCaption,
     onStatus: onStatus || (() => {}),
     log,
+    retryAt: 0, // не переподключаемся раньше этого момента
+    backoff: 0,
   };
+}
+
+// Ошибка от OpenAI: пауза перед повтором (нет денег на счёте — 30 с, прочее — нарастающая 2..30 с)
+function fail(s, code, message) {
+  const quota = /quota|credit|billing/i.test(String(code) + " " + String(message));
+  s.backoff = quota ? 30000 : Math.min(30000, s.backoff ? s.backoff * 2 : 2000);
+  s.retryAt = Date.now() + s.backoff;
+  s.pending.length = 0;
+  s.onStatus("error", message, quota ? "no_credits" : code || "openai_error");
 }
 
 function textOf(ev) {
@@ -56,7 +67,7 @@ export function createTurkishToRussian(opts) {
   const CHUNK = 9600; // 200 мс PCM16 @ 24 кГц
 
   function connect() {
-    if (s.connecting || s.closed) return;
+    if (s.connecting || s.closed || Date.now() < s.retryAt) return;
     s.connecting = true;
     s.ready = false;
     const url = `${WS_BASE()}/v1/realtime/translations?model=${encodeURIComponent(TRANSLATE_MODEL)}`;
@@ -87,7 +98,7 @@ export function createTurkishToRussian(opts) {
       try { ev = JSON.parse(raw.toString()); } catch { return; }
       switch (ev.type) {
         case "session.output_audio.delta":
-          if (ev.delta) s.onAudio(Buffer.from(ev.delta, "base64"));
+          if (ev.delta) { s.backoff = 0; s.onAudio(Buffer.from(ev.delta, "base64")); }
           break;
         case "session.output_transcript.delta":
           s.onCaption("dst", textOf(ev), false);
@@ -104,8 +115,8 @@ export function createTurkishToRussian(opts) {
           s.onCaption("src", "", true);
           break;
         case "error":
-          s.log.error(`[${s.label}] OpenAI error`, ev.error || ev);
-          s.onStatus("error", ev.error?.message || "OpenAI error");
+          s.log.error(`[${s.label}] OpenAI error`, ev.error?.code, ev.error?.message);
+          fail(s, ev.error?.code || ev.error?.type, ev.error?.message || "OpenAI error");
           break;
       }
     });
@@ -113,11 +124,12 @@ export function createTurkishToRussian(opts) {
       s.ready = false;
       s.connecting = false;
       s.ws = null;
+      if (!s.closed && code !== 1000 && code !== 1005 && Date.now() >= s.retryAt) fail(s, String(reason), String(reason));
       if (!s.closed) s.log.info?.(`[${s.label}] closed ${code} ${reason}`);
     });
     ws.on("error", (e) => {
       s.log.error(`[${s.label}] ws error`, e.message);
-      s.onStatus("error", e.message);
+      fail(s, /401/.test(e.message) ? "bad_key" : "network", e.message);
     });
   }
 
@@ -184,7 +196,7 @@ export function createRussianToTurkish(opts) {
   }
 
   function connect() {
-    if (s.connecting || s.closed) return;
+    if (s.connecting || s.closed || Date.now() < s.retryAt) return;
     s.connecting = true;
     s.ready = false;
     const url = `${WS_BASE()}/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
@@ -203,7 +215,7 @@ export function createRussianToTurkish(opts) {
       switch (ev.type) {
         case "response.output_audio.delta":
         case "response.audio.delta":
-          if (ev.delta) s.onAudio(Buffer.from(ev.delta, "base64"));
+          if (ev.delta) { s.backoff = 0; s.onAudio(Buffer.from(ev.delta, "base64")); }
           break;
         case "response.output_audio_transcript.delta":
         case "response.audio_transcript.delta":
@@ -236,8 +248,8 @@ export function createRussianToTurkish(opts) {
         case "error":
           // удаление уже удалённого элемента — не страшно
           if (ev.error?.code === "item_delete_invalid_item_id") break;
-          s.log.error(`[${s.label}] OpenAI error`, ev.error || ev);
-          s.onStatus("error", ev.error?.message || "OpenAI error");
+          s.log.error(`[${s.label}] OpenAI error`, ev.error?.code, ev.error?.message);
+          fail(s, ev.error?.code || ev.error?.type, ev.error?.message || "OpenAI error");
           break;
       }
     });
@@ -250,7 +262,7 @@ export function createRussianToTurkish(opts) {
     });
     ws.on("error", (e) => {
       s.log.error(`[${s.label}] ws error`, e.message);
-      s.onStatus("error", e.message);
+      fail(s, /401/.test(e.message) ? "bad_key" : "network", e.message);
     });
   }
 

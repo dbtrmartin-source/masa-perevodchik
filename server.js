@@ -132,7 +132,15 @@ function startTranslator(p) {
     far: p.far,
     onAudio: (pcm) => relayAudio(p, pcm),
     onCaption: (kind, text, final, full) => relayCaption(p, kind, text, final, full),
-    onStatus: (state, message) => { if (state === "error") json(p.ws, { type: "warn", message }); },
+    onStatus: (state, message, code) => {
+      if (state !== "error") return;
+      // не чаще раза в 10 с на участника; о нехватке денег узнают все за столом
+      const now = Date.now();
+      if (now - (p.warnedAt || 0) < 10000) return;
+      p.warnedAt = now;
+      const members = code === "no_credits" ? [...(rooms.get(p.room)?.values() || [])] : [p];
+      for (const q of members) json(q.ws, { type: "warn", code, message });
+    },
     log: console,
   };
   p.translator = p.lang === "tr" ? createTurkishToRussian(opts) : createRussianToTurkish(opts);
