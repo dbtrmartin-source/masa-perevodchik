@@ -238,7 +238,7 @@ export function createRussianToTurkish(opts) {
           if (id && !items.includes(id)) {
             items.push(id);
             // держим короткий контекст: дешевле и модель не «уплывает» в диалог
-            while (items.length > 8) {
+            while (items.length > 4) { // 2 последние фразы: контекст + дешёвый ввод
               const old = items.shift();
               ws.send(JSON.stringify({ type: "conversation.item.delete", item_id: old }));
             }

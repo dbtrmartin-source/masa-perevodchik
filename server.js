@@ -69,7 +69,7 @@ wss.on("connection", (ws) => {
     try { msg = JSON.parse(data.toString()); } catch { return; }
     if (msg.type === "join") return join(p, msg);
     if (msg.type === "leave") return leave(p);
-    if (msg.type === "mic") { p.mic = !!msg.on; broadcastRoster(p.room); }
+    if (msg.type === "mic") { p.mic = !!msg.on; if (!p.mic) stopTranslator(p); broadcastRoster(p.room); }
     if (msg.type === "far") { p.far = !!msg.on; stopTranslator(p); } // пересоздастся с новыми фильтрами
     if (msg.type === "ping") json(ws, { type: "pong" });
   });
@@ -121,8 +121,17 @@ function onAudio(p, data) {
     if (activeSessions >= MAX_SESSIONS) return;
     startTranslator(p);
   }
+  p.lastAudio = Date.now();
   p.translator.append(Buffer.from(data));
 }
+
+// Сессия OpenAI без речи дольше IDLE_MS закрывается: платим только пока кто-то говорит.
+const IDLE_MS = Number(process.env.IDLE_MS || 15000);
+setInterval(() => {
+  const now = Date.now();
+  for (const members of rooms.values())
+    for (const q of members.values()) if (q.translator && now - (q.lastAudio || 0) > IDLE_MS) stopTranslator(q);
+}, 3000);
 
 function startTranslator(p) {
   activeSessions++;
