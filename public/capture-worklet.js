@@ -12,6 +12,7 @@ class Capture extends AudioWorkletProcessor {
     this.holdFrames = 0;
     this.open = false;
     this.muted = false;
+    this.tail = 0;
     this.levelAcc = 0;
     this.levelCnt = 0;
     this.port.onmessage = (e) => {
@@ -37,6 +38,10 @@ class Capture extends AudioWorkletProcessor {
       this.open = false;
     }
     const pass = this.open && !this.muted;
+    // после речи досылаем 1 с тишины (чтобы модель поняла конец фразы), дальше молчим — не платим за тишину
+    if (pass) this.tail = Math.round(sampleRate / ch.length);
+    else if (this.tail > 0) this.tail--;
+    const send = pass || (this.tail > 0 && !this.muted);
 
     this.levelAcc = Math.max(this.levelAcc, rms);
     if (++this.levelCnt >= 8) {
@@ -56,7 +61,7 @@ class Capture extends AudioWorkletProcessor {
       v = Math.max(-1, Math.min(1, v));
       this.out[this.n++] = v < 0 ? v * 0x8000 : v * 0x7fff;
       if (this.n === this.out.length) {
-        this.port.postMessage({ pcm: this.out.buffer }, [this.out.buffer]);
+        if (send) this.port.postMessage({ pcm: this.out.buffer }, [this.out.buffer]);
         this.out = new Int16Array(2400);
         this.n = 0;
       }
