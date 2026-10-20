@@ -70,7 +70,7 @@ wss.on("connection", (ws) => {
     try { msg = JSON.parse(data.toString()); } catch { return; }
     if (msg.type === "join") return join(p, msg);
     if (msg.type === "leave") return leave(p);
-    if (msg.type === "mic") { p.mic = !!msg.on; if (!p.mic) stopTranslator(p); broadcastRoster(p.room); }
+    if (msg.type === "mic") { p.mic = !!msg.on; broadcastRoster(p.room); } // сессию не рвём: уже сказанное допереводится, закроет таймер тишины
     if (msg.type === "far") { p.far = !!msg.on; stopTranslator(p); } // пересоздастся с новыми фильтрами
     if (msg.type === "ping") { ws.missed = 0; json(ws, { type: "pong" }); }
   });
@@ -118,6 +118,7 @@ function hasListeners(p) {
 
 // «Слово» за столом: переводится только один говорящий. Пока он говорит и пока звучит его перевод,
 // речь остальных в перевод не идёт — модели не перебивают друг друга и нет двойного перевода.
+const FLOOR = process.env.FLOOR === "1"; // режим «по очереди» выключен по умолчанию (версия 4 его не оправдала)
 const floors = new Map(); // room -> { id, name, start, lastIn, lastOut }
 function floorBusy(f, now) {
   if (!f) return false;
@@ -140,11 +141,11 @@ function onAudio(p, data) {
   if (!hasListeners(p)) return stopTranslator(p); // слушать некому — не тратим деньги
   const now = Date.now();
   const f = floors.get(p.room);
-  if (f && f.id !== p.id && floorBusy(f, now)) {
+  if (FLOOR && f && f.id !== p.id && floorBusy(f, now)) {
     if (now - (p.busyAt || 0) > 3000) { p.busyAt = now; json(p.ws, { type: "busy", name: f.name }); }
     return; // слово занято — не переводим
   }
-  if (!f || f.id !== p.id) setFloor(p.room, { id: p.id, name: p.name, start: now, lastIn: now, lastOut: 0 });
+  if (!FLOOR) {} else if (!f || f.id !== p.id) setFloor(p.room, { id: p.id, name: p.name, start: now, lastIn: now, lastOut: 0 });
   else f.lastIn = now;
   if (!p.translator) {
     if (activeSessions >= MAX_SESSIONS) return;

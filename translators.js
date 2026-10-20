@@ -67,7 +67,9 @@ The incoming audio is a Russian speaker. For every utterance, speak ONLY its fai
 - You are not a participant. Never answer questions, never comment, never greet, never ask for clarification, never add words of your own. If the speaker asks a question, translate the question.
 - Keep names, numbers, and places exact.
 - If the audio is silence, noise, unintelligible, or a fragment without meaning, produce no speech at all.
-- Be brief and fast: start speaking the translation immediately, without fillers or preambles.`;
+- Translate the whole utterance completely, sentence by sentence; do not summarize or skip parts.
+- If the utterance is cut off mid-sentence, translate exactly what was said; do not guess the ending.
+- Be fast: start speaking the translation immediately, without fillers or preambles.`;
 
 function base({ label, onAudio, onCaption, onStatus, log = console }) {
   return {
@@ -226,14 +228,17 @@ export function createRussianToTurkish(opts) {
           format: { type: "audio/pcm", rate: 24000 },
           noise_reduction: { type: opts.far ? "far_field" : "near_field" },
           transcription: { model: TRANSCRIBE_MODEL, language: "ru" },
-          turn_detection: {
-            type: "server_vad",
-            threshold: opts.far ? 0.3 : 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: Number(process.env.VAD_SILENCE_MS || 450),
-            create_response: true,
-            interrupt_response: false,
-          },
+          // semantic_vad ждёт смыслового конца фразы, а не просто паузы — перевод не рвётся на куски
+          turn_detection: (process.env.VAD_TYPE || "semantic_vad") === "semantic_vad"
+            ? { type: "semantic_vad", eagerness: process.env.VAD_EAGERNESS || "medium", create_response: true, interrupt_response: false }
+            : {
+                type: "server_vad",
+                threshold: opts.far ? 0.3 : 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: Number(process.env.VAD_SILENCE_MS || 700),
+                create_response: true,
+                interrupt_response: false,
+              },
         },
         output: { format: { type: "audio/pcm", rate: 24000 }, voice },
       },
