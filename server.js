@@ -100,6 +100,7 @@ function leave(p) {
   if (!p.room) return;
   const room = p.room;
   stopTranslator(p);
+  if (floors.get(room)?.id === p.id) setFloor(room, null);
   const members = rooms.get(room);
   members?.delete(p.id);
   p.room = null;
@@ -115,9 +116,36 @@ function hasListeners(p) {
   return false;
 }
 
+// «Слово» за столом: переводится только один говорящий. Пока он говорит и пока звучит его перевод,
+// речь остальных в перевод не идёт — модели не перебивают друг друга и нет двойного перевода.
+const floors = new Map(); // room -> { id, name, start, lastIn, lastOut }
+function floorBusy(f, now) {
+  if (!f) return false;
+  if (now - f.lastIn < 1500) return true; // ещё говорит
+  if (f.lastOut > f.lastIn) return now - f.lastOut < 1200; // звучит перевод
+  return now - f.lastIn < 4000; // перевод ещё не начался — ждём модель
+}
+function setFloor(room, f) {
+  if (f) floors.set(room, f); else floors.delete(room);
+  const members = rooms.get(room);
+  if (members) for (const q of members.values()) json(q.ws, { type: "floor", id: f ? f.id : null, name: f ? f.name : "" });
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [room, f] of floors) if (!floorBusy(f, now)) setFloor(room, null);
+}, 300);
+
 function onAudio(p, data) {
   if (!p.room || !p.mic) return;
   if (!hasListeners(p)) return stopTranslator(p); // слушать некому — не тратим деньги
+  const now = Date.now();
+  const f = floors.get(p.room);
+  if (f && f.id !== p.id && floorBusy(f, now)) {
+    if (now - (p.busyAt || 0) > 3000) { p.busyAt = now; json(p.ws, { type: "busy", name: f.name }); }
+    return; // слово занято — не переводим
+  }
+  if (!f || f.id !== p.id) setFloor(p.room, { id: p.id, name: p.name, start: now, lastIn: now, lastOut: 0 });
+  else f.lastIn = now;
   if (!p.translator) {
     if (activeSessions >= MAX_SESSIONS) return;
     startTranslator(p);
@@ -166,6 +194,8 @@ function stopTranslator(p) {
 function relayAudio(p, pcm) {
   const members = rooms.get(p.room);
   if (!members) return;
+  const f = floors.get(p.room);
+  if (f && f.id === p.id) f.lastOut = Date.now();
   const header = Buffer.from([p.idBuf.length]);
   const frame = Buffer.concat([header, p.idBuf, pcm]);
   for (const q of members.values()) {
