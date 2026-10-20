@@ -136,10 +136,31 @@ setInterval(() => {
   for (const [room, f] of floors) if (!floorBusy(f, now)) setFloor(room, null);
 }, 300);
 
+const leads = new Map(); // "room|lang" -> { id, at }
+function rmsOf(buf) {
+  const n = Math.floor(buf.length / 2);
+  if (!n) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) { const v = buf.readInt16LE(i * 2) / 32768; sum += v * v; }
+  return Math.sqrt(sum / n);
+}
+
 function onAudio(p, data) {
   if (!p.room || !p.mic) return;
   if (!hasListeners(p)) return stopTranslator(p); // слушать некому — не тратим деньги
   const now = Date.now();
+  // v7: один голос — один перевод. Если двое с одним языком слышат одну речь, переводим только громкий микрофон (самого говорящего).
+  p.level = 0.7 * (p.level || 0) + 0.3 * rmsOf(data);
+  const lk = p.room + "|" + p.lang;
+  const lead = leads.get(lk);
+  if (lead && lead.id !== p.id && now - lead.at < 1200) {
+    const leader = rooms.get(p.room)?.get(lead.id);
+    if (leader && (leader.level || 0) >= p.level * 0.8) return; // это эхо чужой речи
+  }
+  if (!lead || lead.id !== p.id) { leads.set(lk, { id: p.id, at: now, since: now }); p.pend = []; } else lead.at = now;
+  // первые 0.3 с держим звук у себя: если окажется, что громче другой микрофон, — сессию не открываем вовсе
+  const cur = leads.get(lk);
+  if (!p.translator && now - cur.since < 300) { (p.pend ||= []).push(Buffer.from(data)); return; }
   const f = floors.get(p.room);
   if (FLOOR && f && f.id !== p.id && floorBusy(f, now)) {
     if (now - (p.busyAt || 0) > 3000) { p.busyAt = now; json(p.ws, { type: "busy", name: f.name }); }
@@ -152,6 +173,7 @@ function onAudio(p, data) {
     startTranslator(p);
   }
   p.lastAudio = Date.now();
+  if (p.pend?.length) { for (const b of p.pend) p.translator.append(b); p.pend = []; }
   p.translator.append(Buffer.from(data));
 }
 

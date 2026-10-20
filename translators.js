@@ -218,12 +218,14 @@ export function createTurkishToRussian(opts) {
 
 // ---------------------------------------------------------------- RU -> TR
 // Турецкий -> русский тем же «переводчиком», что и RU->TR (с ним вышло заметно лучше, чем с gpt-realtime-translate)
+export const TR_MODEL = process.env.OPENAI_TR_MODEL || "gpt-realtime-2.1"; // v7: самая умная голосовая модель для TR->RU
 export function createTurkishToRussianInterpreter(opts) {
-  return createRussianToTurkish({ ...opts, src: "tr", dst: "ru" });
+  return createRussianToTurkish({ ...opts, src: "tr", dst: "ru", model: TR_MODEL });
 }
 
 export function createRussianToTurkish(opts) {
   const src = opts.src || "ru", dst = opts.dst || "tr";
+  const model = opts.model || REALTIME_MODEL;
   const s = base(opts);
   const voice = VOICES[(opts.voiceIndex || 0) % VOICES.length];
   const items = [];
@@ -231,7 +233,7 @@ export function createRussianToTurkish(opts) {
   function sessionUpdate() {
     const session = {
       type: "realtime",
-      model: REALTIME_MODEL,
+      model,
       output_modalities: ["audio"],
       instructions: interpreterPrompt(src, dst),
       audio: {
@@ -254,7 +256,7 @@ export function createRussianToTurkish(opts) {
         output: { format: { type: "audio/pcm", rate: 24000 }, voice },
       },
     };
-    if (/realtime-2/.test(REALTIME_MODEL)) session.reasoning = { effort: "low" };
+    if (/realtime-2/.test(model) && process.env.REASONING !== "off") session.reasoning = { effort: "low" };
     return { type: "session.update", session };
   }
 
@@ -262,7 +264,7 @@ export function createRussianToTurkish(opts) {
     if (s.connecting || s.closed || Date.now() < s.retryAt) return;
     s.connecting = true;
     s.ready = false;
-    const url = `${WS_BASE()}/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
+    const url = `${WS_BASE()}/v1/realtime?model=${encodeURIComponent(model)}`;
     if (overLimit()) { fail(s, "daily_limit", "daily limit"); s.connecting = false; return; }
     const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${API_KEY()}` } });
     s.ws = ws;
