@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Masa · Стол-переводчик</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <!-- Стартовый экран: создать стол -->
+  <section id="v-home" class="view" hidden>
+    <div class="center">
+      <div class="logo">RU ⇄ TR</div>
+      <h1>Стол-переводчик<br /><span class="sub">Masa çevirmeni</span></h1>
+      <p class="muted">Живой голосовой перевод в наушники.<br />Kulaklığa canlı sesli çeviri.</p>
+      <button id="btn-create" class="primary big">Создать стол · Masa oluştur</button>
+    </div>
+  </section>
+
+  <!-- Вход: имя и язык -->
+  <section id="v-join" class="view" hidden>
+    <div class="center">
+      <div class="logo">RU ⇄ TR</div>
+      <label class="field">
+        <span>Имя · Adınız</span>
+        <input id="in-name" maxlength="32" autocomplete="given-name" placeholder="Дмитрий / Mehmet" />
+      </label>
+      <div class="field">
+        <span>Я говорю на · Konuştuğum dil</span>
+        <div class="langs">
+          <button class="lang" data-lang="ru"><b>RU</b> Русский</button>
+          <button class="lang" data-lang="tr"><b>TR</b> Türkçe</button>
+        </div>
+      </div>
+      <button id="btn-join" class="primary big" disabled>Войти · Katıl</button>
+      <p class="muted small">Наденьте AirPods. Экран должен оставаться включённым.<br />AirPods takın. Ekran açık kalmalı.</p>
+      <p id="join-err" class="err" hidden></p>
+    </div>
+  </section>
+
+  <!-- Комната -->
+  <section id="v-room" class="view" hidden>
+    <header class="bar">
+      <div>
+        <div class="room-title" data-t="table">Стол</div>
+        <div class="room-code" id="room-code"></div>
+      </div>
+      <div class="bar-actions">
+        <button id="btn-share" class="ghost" data-t="invite">Пригласить</button>
+        <button id="btn-settings" class="ghost icon" aria-label="settings">⚙︎</button>
+      </div>
+    </header>
+
+    <div id="share-panel" class="panel" hidden>
+      <img id="qr" alt="QR" />
+      <div class="link-row"><input id="share-link" readonly /><button id="btn-copy" class="ghost" data-t="copy">Копировать</button></div>
+    </div>
+
+    <div id="settings-panel" class="panel" hidden>
+      <label class="row"><span data-t="sens">Чувствительность микрофона</span>
+        <input id="in-sens" type="range" min="1" max="100" value="60" /></label>
+      <p class="muted small" data-t="sensHint">Меньше — не ловит соседей. Больше — ловит тихую речь.</p>
+      <label class="row"><span data-t="vol">Громкость перевода</span>
+        <input id="in-vol" type="range" min="0" max="200" value="100" /></label>
+      <label class="row check"><input id="in-nohp" type="checkbox" /> <span data-t="nohp">Я без наушников (микрофон выключается, пока звучит перевод)</span></label>
+      <button id="btn-test" class="ghost" data-t="test">Проверить звук</button>
+    </div>
+
+    <div id="people" class="people"></div>
+    <div id="warn" class="warn" hidden></div>
+    <div id="feed" class="feed"><p class="muted center-text" id="feed-empty" data-t="empty">Говорите — перевод появится здесь и в наушниках.</p></div>
+
+    <footer class="controls">
+      <button id="btn-leave" class="ghost" data-t="leave">Выйти</button>
+      <button id="btn-mic" class="mic on" aria-label="mic">
+        <span class="ring" id="mic-ring"></span>
+        <span id="mic-label" data-t="micOn">Микрофон вкл.</span>
+      </button>
+      <div class="status" id="status"></div>
+    </footer>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

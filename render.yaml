@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: masa-perevodchik
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false

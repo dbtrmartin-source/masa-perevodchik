@@ -1,0 +1,18 @@
+{
+  "name": "masa-perevodchik",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Живой голосовой перевод RU↔TR за одним столом (OpenAI Realtime)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/relay.test.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  }
+}
